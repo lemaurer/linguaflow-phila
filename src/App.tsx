@@ -234,6 +234,7 @@ function App() {
   const [ankiStatus, setAnkiStatus] = useState<AnkiStatus>("checking");
   const [ankiError, setAnkiError] = useState("");
   const [deckNames, setDeckNames] = useState<string[]>([]);
+  const [finnishDeck, setFinnishDeck] = useState(() => localStorage.getItem("linguaflow-finnish-deck") || "");
   const [languageStats, setLanguageStats] = useState<LanguageStats>({
     finnish: { ...emptyLanguageStats },
     swiss: { ...emptyLanguageStats },
@@ -261,7 +262,7 @@ function App() {
     const live = languageStats[language.id];
     const learned = ankiStatus === "connected" ? live.learned : 0;
     const journey = getLanguageJourney(learned);
-    const parentDeck = ANKI_DECKS[language.id];
+    const parentDeck = language.id === "finnish" ? finnishDeck : ANKI_DECKS[language.id];
     const liveTopics = deckNames
       .filter((name) => name.startsWith(`${parentDeck}::`))
       .map((name) => name.slice(parentDeck.length + 2).split("::")[0])
@@ -277,7 +278,7 @@ function App() {
       progress: journey.progress,
       topics: liveTopics.length ? liveTopics : language.topics,
     };
-  }), [ankiStatus, deckNames, languageStats]);
+  }), [ankiStatus, deckNames, finnishDeck, languageStats]);
 
   const activeLanguage = hydratedLanguages.find((language) => language.id === activeLanguageId)!;
   const detailLanguage = hydratedLanguages.find((language) => language.id === detailLanguageId)!;
@@ -285,7 +286,7 @@ function App() {
   const streak = calculateStreak(reviewHistory);
   const ui = useMemo(() => createUi((appSettings.immersiveUi ? activeLanguageId : "german") as UiLanguage), [appSettings.immersiveUi, activeLanguageId]);
 
-  const refreshAnki = async () => {
+  const refreshAnki = async (finnishDeckOverride = finnishDeck) => {
     setAnkiStatus("checking");
     setAnkiError("");
     try {
@@ -294,18 +295,24 @@ function App() {
       setReviewHistory(history);
       setDeckNames(overview.deckNames);
       const stats = await Promise.all(philaLanguages.map(async (id) => {
-        const deck = ANKI_DECKS[id];
-        const available = overview.deckNames.includes(deck);
+        const deck = id === "finnish" ? finnishDeckOverride : ANKI_DECKS[id];
+        const available = Boolean(deck && overview.deckNames.includes(deck));
         if (!available) return [id, { ...emptyLanguageStats, available }] as const;
         const [due, learningStats] = await Promise.all([getDeckDueCount(deck), getDeckLearningStats(deck)]);
         return [id, { due, ...learningStats, available }] as const;
       }));
-      setLanguageStats(Object.fromEntries(stats) as LanguageStats);
+      setLanguageStats((current) => ({ ...current, ...Object.fromEntries(stats) } as LanguageStats));
       setAnkiStatus("connected");
     } catch (error) {
       setAnkiStatus("offline");
       setAnkiError(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const selectFinnishDeck = (deck: string) => {
+    setFinnishDeck(deck);
+    localStorage.setItem("linguaflow-finnish-deck", deck);
+    void refreshAnki(deck);
   };
 
   useEffect(() => { void refreshAnki(); }, []);
@@ -364,7 +371,8 @@ function App() {
     if (!languageStats[languageId].due) return;
     setReviewLoading(true);
     try {
-      const firstCard = await startAnkiReview(ANKI_DECKS[languageId]);
+      const deck = languageId === "finnish" ? finnishDeck : ANKI_DECKS[languageId];
+      const firstCard = await startAnkiReview(deck);
       if (request === reviewRequest.current) setAnkiCard(firstCard);
     } catch (error) {
       if (request === reviewRequest.current) setReviewError(error instanceof Error ? error.message : String(error));
@@ -476,7 +484,7 @@ function App() {
 
   if (ankiStatus === "checking") return <ConnectionScreen checking onRetry={() => void refreshAnki()} onFeedback={() => setPage("feedback")} />;
   if (ankiStatus === "offline" && page !== "feedback") return <ConnectionScreen error={ankiError} onRetry={() => void refreshAnki()} onFeedback={() => setPage("feedback")} />;
-  if (ankiStatus === "connected" && !languageStats.finnish.available && page !== "feedback") return <DeckSetupScreen onRetry={() => void refreshAnki()} onFeedback={() => setPage("feedback")} />;
+  if (ankiStatus === "connected" && !languageStats.finnish.available && page !== "feedback") return <DeckSetupScreen decks={deckNames} selectedDeck={finnishDeck} onSelect={selectFinnishDeck} onRetry={() => void refreshAnki()} onFeedback={() => setPage("feedback")} />;
 
   if (page === "review") {
     return (
@@ -486,6 +494,7 @@ function App() {
         completed={completed}
         cards={reviewCards}
         language={activeLanguage}
+        deckName={finnishDeck}
         ankiCard={ankiCard}
         usesAnki={reviewUsesAnki}
         loading={reviewLoading}
@@ -544,9 +553,9 @@ function App() {
         {page === "progress" && <ProgressPage languages={hydratedLanguages} selectedId={progressLanguageId} onSelect={setProgressLanguageId} onStartReview={(id) => void startReview(id)} />}
         {page === "review-setup" && <ReviewSetupPage languages={hydratedLanguages} activeLanguageId={activeLanguageId} onSelectLanguage={setActiveLanguageId} onStart={(id) => void startReview(id)} />}
         {page === "streak" && <StreakPage onBack={() => setPage("home")} reviewHistory={reviewHistory} streak={streak} />}
-        {page === "cards" && <CardsPage languages={hydratedLanguages} activeLanguageId={activeLanguageId} />}
+        {page === "cards" && <CardsPage languages={hydratedLanguages} activeLanguageId={activeLanguageId} deckName={finnishDeck} />}
         {page === "stats" && <StatsPage languages={hydratedLanguages} stats={languageStats} reviewedToday={reviewedToday} reviewHistory={reviewHistory} />}
-        {page === "settings" && <SettingsPage settings={appSettings} onChange={setAppSettings} onReconnect={() => void refreshAnki()} onSync={() => void runSync()} ankiStatus={ankiStatus} ankiError={ankiError} syncStatus={syncStatus} syncError={syncError} />}
+        {page === "settings" && <SettingsPage settings={appSettings} onChange={setAppSettings} onReconnect={() => void refreshAnki()} onSync={() => void runSync()} ankiStatus={ankiStatus} ankiError={ankiError} syncStatus={syncStatus} syncError={syncError} deckNames={deckNames} selectedDeck={finnishDeck} onSelectDeck={selectFinnishDeck} />}
         {page === "feedback" && <FeedbackPage onBack={() => setPage("home")} />}
       </main>
     </div></UiContext.Provider>
@@ -566,7 +575,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
       icon: <Monitor size={36} />,
       eyebrow: "DEINE KARTEN",
       title: "Anki bleibt das Herzstück",
-      text: "Öffne beim Lernen zuerst Anki. LinguaFlow liest ausschließlich deinen Stapel „Finnish“ und übernimmt jede Bewertung direkt in Anki.",
+      text: "Öffne beim Lernen zuerst Anki. Danach wählst du einmal deinen Finnisch-Stapel aus – LinguaFlow übernimmt jede Bewertung direkt in Anki.",
     },
     {
       icon: <Sparkles size={36} />,
@@ -606,14 +615,23 @@ function ConnectionScreen({ checking = false, error, onRetry, onFeedback }: { ch
   </div>;
 }
 
-function DeckSetupScreen({ onRetry, onFeedback }: { onRetry: () => void; onFeedback: () => void }) {
+function DeckSetupScreen({ decks, selectedDeck, onSelect, onRetry, onFeedback }: { decks: string[]; selectedDeck: string; onSelect: (deck: string) => void; onRetry: () => void; onFeedback: () => void }) {
+  const [choice, setChoice] = useState(selectedDeck);
   return <div className="welcome-shell accent-blue">
     <div className="connection-card">
       <div className="connection-hero-icon"><Layers3 size={38} /></div>
-      <p>FAST GESCHAFFT</p>
-      <h1>Der Stapel „Finnish“ fehlt</h1>
-      <span>Anki ist verbunden. Benenne deinen finnischen Hauptstapel in Anki bitte genau <strong>Finnish</strong>. Unterstapel wie „Finnish::Vocabulary“ werden automatisch mitgenommen.</span>
-      <button className="primary-button" onClick={onRetry}><RotateCcw size={17} />Noch einmal prüfen</button>
+      <p>DEIN FINNISCH-STAPEL</p>
+      <h1>Welchen Stapel möchtest du lernen?</h1>
+      <span>Anki ist verbunden. Wähle den Hauptstapel mit deinen Finnisch-Karten aus. Seine Unterstapel werden automatisch mitgenommen.</span>
+      {decks.length ? <div className="deck-picker">
+        <label htmlFor="onboarding-deck">Anki-Stapel</label>
+        <select id="onboarding-deck" value={choice} onChange={(event) => setChoice(event.target.value)}>
+          <option value="" disabled>Stapel auswählen …</option>
+          {decks.map((deck) => <option value={deck} key={deck}>{deck.replaceAll("::", " › ")}</option>)}
+        </select>
+      </div> : <small>In Anki wurden noch keine Stapel gefunden.</small>}
+      <button className="primary-button" disabled={!choice} onClick={() => onSelect(choice)}><Check size={17} />Diesen Stapel verwenden</button>
+      <button className="welcome-back" onClick={onRetry}><RotateCcw size={15} /> Stapelliste aktualisieren</button>
       <button className="welcome-back" onClick={onFeedback}>Feedback geben</button>
     </div>
   </div>;
@@ -990,6 +1008,7 @@ function ReviewView({
   completed,
   cards,
   language,
+  deckName,
   ankiCard,
   usesAnki,
   loading,
@@ -1009,6 +1028,7 @@ function ReviewView({
   completed: number;
   cards: ReviewCard[];
   language: LanguageInfo;
+  deckName: string;
   ankiCard: AnkiCard | null;
   usesAnki: boolean;
   loading: boolean;
@@ -1244,7 +1264,7 @@ function ReviewView({
               <div key={`${language.id}-${ankiCard?.cardId ?? index}`} className={`flashcard ${revealed ? "revealed" : ""} ${loading ? "card-loading" : ""}`}>
                 <div className="flashcard-topline">
                   <div className="review-language"><span>{language.flag}</span>{language.name}</div>
-                  <span className="deck-path">{ankiCard ? formatDeckPath(ankiCard.deckName, language.id) : card.deck}</span>
+                  <span className="deck-path">{ankiCard ? formatDeckPath(ankiCard.deckName, deckName) : card.deck}</span>
                   <button
                     className={ankiCard && !audioFilesFromCard(ankiCard, activeAudioFields ?? []).length ? "audio-unavailable" : ""}
                     aria-label={t("playCardAudio")}
@@ -1540,16 +1560,15 @@ function normalizeAnswer(value: string) {
   return plainText(value).toLocaleLowerCase().normalize("NFKC").replace(/[.,!?;:。，！？]/g, "").replace(/\s+/g, " ").trim();
 }
 
-function formatDeckPath(deckName: string, languageId: LanguageId) {
-  const parent = ANKI_DECKS[languageId];
+function formatDeckPath(deckName: string, parent: string) {
   const child = deckName.startsWith(`${parent}::`) ? deckName.slice(parent.length + 2) : "";
-  return child ? child.replaceAll("::", " › ") : ANKI_DECKS[languageId];
+  return child ? child.replaceAll("::", " › ") : parent;
 }
 
 type BrowserMode = "cards" | "notes";
 type BrowserStatus = "" | "is:due" | "is:new" | "-is:new" | "is:suspended";
 
-function CardsPage({ languages, activeLanguageId }: { languages: LanguageInfo[]; activeLanguageId: LanguageId }) {
+function CardsPage({ languages, activeLanguageId, deckName }: { languages: LanguageInfo[]; activeLanguageId: LanguageId; deckName: string }) {
   const { t } = useUi();
   const [languageId, setLanguageId] = useState(activeLanguageId);
   const [mode, setMode] = useState<BrowserMode>("cards");
@@ -1574,10 +1593,10 @@ function CardsPage({ languages, activeLanguageId }: { languages: LanguageInfo[];
     const timer = window.setTimeout(async () => {
       try {
         if (mode === "cards") {
-          const result = await searchAnkiCards(ANKI_DECKS[languageId], fullQuery);
+          const result = await searchAnkiCards(deckName, fullQuery);
           if (!cancelled) { setCards(result.items); setTotal(result.total); }
         } else {
-          const result = await searchAnkiNotes(ANKI_DECKS[languageId], fullQuery);
+          const result = await searchAnkiNotes(deckName, fullQuery);
           if (!cancelled) { setNotes(result.items); setTotal(result.total); }
         }
         if (!cancelled) setSelected(0);
@@ -1588,7 +1607,7 @@ function CardsPage({ languages, activeLanguageId }: { languages: LanguageInfo[];
       }
     }, 260);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [languageId, mode, fullQuery]);
+  }, [languageId, mode, fullQuery, deckName]);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -1607,7 +1626,7 @@ function CardsPage({ languages, activeLanguageId }: { languages: LanguageInfo[];
         <div className="browser-language-tabs">{languages.map((item) => <button key={item.id} className={languageId === item.id ? "active" : ""} onClick={() => setLanguageId(item.id)}><span>{item.flag}</span>{item.name}</button>)}</div>
         <div className="browser-search"><Search size={18} /><input ref={searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("searchCards")} /><kbd>⌘ K</kbd></div>
         <div className="browser-mode-switch"><button className={mode === "cards" ? "active" : ""} onClick={() => setMode("cards")}><BookOpen size={16} />{t("cards")}</button><button className={mode === "notes" ? "active" : ""} onClick={() => setMode("notes")}><Tags size={16} />{t("notes")}</button></div>
-        <button className="secondary-button browser-open-anki" onClick={() => void openAnkiBrowser(ANKI_DECKS[languageId], fullQuery)}><ExternalLink size={15} />{t("openInAnki")}</button>
+        <button className="secondary-button browser-open-anki" onClick={() => void openAnkiBrowser(deckName, fullQuery)}><ExternalLink size={15} />{t("openInAnki")}</button>
         <div className="browser-filters">{(["", "is:due", "is:new", "-is:new", "is:suspended"] as BrowserStatus[]).map((value) => <button className={status === value ? "active" : ""} key={value || "all"} onClick={() => setStatus(value)}>{t(value === "" ? "all" : value === "is:due" ? "due" : value === "is:new" ? "newCards" : value === "-is:new" ? "learned" : "suspended")}</button>)}</div>
       </section>
       <section className="browser-workspace surface">
@@ -1627,7 +1646,7 @@ function CardsPage({ languages, activeLanguageId }: { languages: LanguageInfo[];
         <aside className="browser-inspector">
           {selectedItem ? <>
             <div className="inspector-head"><div><small>{mode === "cards" ? t("cardDetails") : t("noteDetails")}</small><h2>{selectedItem.modelName}</h2></div>{selectedNoteId && <button onClick={() => void editAnkiNote(selectedNoteId)}><ExternalLink size={15} />{t("editInAnki")}</button>}</div>
-            {mode === "cards" && <div className="inspector-meta"><span>{formatDeckPath((selectedItem as AnkiCard).deckName, languageId)}</span><span>{t("interval")}: {formatInterval((selectedItem as AnkiCard).interval ?? 0, t)}</span><span>{t("reviews")}: {(selectedItem as AnkiCard).reps ?? 0}</span><span>{t("lapses")}: {(selectedItem as AnkiCard).lapses ?? 0}</span></div>}
+            {mode === "cards" && <div className="inspector-meta"><span>{formatDeckPath((selectedItem as AnkiCard).deckName, deckName)}</span><span>{t("interval")}: {formatInterval((selectedItem as AnkiCard).interval ?? 0, t)}</span><span>{t("reviews")}: {(selectedItem as AnkiCard).reps ?? 0}</span><span>{t("lapses")}: {(selectedItem as AnkiCard).lapses ?? 0}</span></div>}
             {mode === "notes" && <div className="inspector-tags">{((selectedItem as AnkiNote).tags || []).length ? (selectedItem as AnkiNote).tags.map((tag) => <span key={tag}>#{tag}</span>) : <span>{t("noTags")}</span>}</div>}
             <div className="inspector-fields">{itemFields.map(([name, field]) => <div key={name}><small>{name}</small><div dangerouslySetInnerHTML={{ __html: cleanFieldHtml(field.value) || `<span class="empty-field">${t("emptyField")}</span>` }} /></div>)}</div>
           </> : <div className="browser-empty"><BookOpen size={26} /><span>{t("selectResult")}</span></div>}
@@ -1673,7 +1692,7 @@ function StatsPage({ languages, stats, reviewedToday, reviewHistory }: { languag
   );
 }
 
-function SettingsPage({ settings, onChange, onReconnect, onSync, ankiStatus, ankiError, syncStatus, syncError }: {
+function SettingsPage({ settings, onChange, onReconnect, onSync, ankiStatus, ankiError, syncStatus, syncError, deckNames, selectedDeck, onSelectDeck }: {
   settings: AppSettings;
   onChange: (settings: AppSettings) => void;
   onReconnect: () => void;
@@ -1682,6 +1701,9 @@ function SettingsPage({ settings, onChange, onReconnect, onSync, ankiStatus, ank
   ankiError: string;
   syncStatus: SyncStatus;
   syncError: string;
+  deckNames: string[];
+  selectedDeck: string;
+  onSelectDeck: (deck: string) => void;
 }) {
   const { t } = useUi();
   const update = (key: keyof AppSettings, value: boolean) => onChange({ ...settings, [key]: value });
@@ -1696,6 +1718,13 @@ function SettingsPage({ settings, onChange, onReconnect, onSync, ankiStatus, ank
         <ToggleRow icon={Cloud} title={t("autoSync")} detail={t("autoSyncDetail")} enabled={settings.autoSync} onToggle={(value) => update("autoSync", value)} />
         <ToggleRow icon={Zap} title={t("reduceMotion")} detail={t("reduceMotionDetail")} enabled={settings.reducedMotion} onToggle={(value) => update("reducedMotion", value)} />
         <div className="setting-info-row"><span><Moon size={20} /></span><div><strong>{t("darkMode")}</strong><small>{t("darkModeDetail")}</small></div><b>{t("system")}</b></div>
+      </section>
+      <section className="deck-settings-panel surface">
+        <span className="connection-icon connected"><Layers3 size={21} /></span>
+        <div><h2>Finnisch-Stapel</h2><p>LinguaFlow verwendet diesen Anki-Stapel und alle darin enthaltenen Unterstapel.</p></div>
+        <select value={selectedDeck} onChange={(event) => onSelectDeck(event.target.value)} aria-label="Finnisch-Stapel auswählen">
+          {deckNames.map((deck) => <option value={deck} key={deck}>{deck.replaceAll("::", " › ")}</option>)}
+        </select>
       </section>
       <section className="connection-panel surface"><span className={`connection-icon ${ankiStatus}`}><Monitor size={21} /></span><div><h2>{t("ankiConnection")}</h2><p>{ankiStatus === "connected" ? t("connected") : ankiStatus === "checking" ? t("checking") : ankiError || t("disconnected")}</p></div><button className="secondary-button" onClick={onReconnect}>{t("reconnect")}</button></section>
       <section className={`connection-panel sync-panel surface ${syncStatus}`}><span className={`connection-icon ${syncStatus === "success" ? "connected" : ""}`}>{syncStatus === "syncing" ? <LoaderCircle className="spin" size={21} /> : syncStatus === "error" ? <CloudOff size={21} /> : <Cloud size={21} />}</span><div><h2>{t("ankiWebSync")}</h2><p>{syncStatus === "syncing" ? t("syncing") : syncStatus === "success" ? t("syncComplete") : syncStatus === "error" ? syncError || t("syncFailed") : t("syncReady")}</p></div><button className="secondary-button" disabled={ankiStatus !== "connected" || syncStatus === "syncing"} onClick={onSync}>{t("syncNow")}</button></section>

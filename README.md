@@ -6,8 +6,8 @@ Eine persönliche macOS-Lernapp für Philas Finnisch-Karten. LinguaFlow verwende
 
 1. Anki Desktop installieren und mit AnkiWeb synchronisieren.
 2. Das Add-on **AnkiConnect** in Anki installieren.
-3. Den finnischen Hauptstapel exakt `Finnish` nennen. Unterstapel wie `Finnish::Vocabulary` funktionieren automatisch.
-4. Anki geöffnet lassen und LinguaFlow starten.
+3. Anki geöffnet lassen und LinguaFlow starten.
+4. Beim ersten Start den gewünschten Finnisch-Stapel auswählen. Seine Unterstapel werden automatisch berücksichtigt.
 
 Die erwarteten Notizfelder sind `Finnish`, `Glossing`, `English` und `Audio`. Zwei Karten pro Notiz werden unterstützt:
 
