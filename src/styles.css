@@ -918,6 +918,7 @@ button:focus-visible { outline: 3px solid rgba(79, 70, 248, .22); outline-offset
 .feedback-panel textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .feedback-panel p { margin: 14px 0 22px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .feedback-panel p.feedback-error { color: #a84352; }
+.feedback-panel p.feedback-success { display: flex; align-items: center; gap: 7px; color: #238352; font-weight: 700; }
 .feedback-panel .primary-button { display: flex; align-items: center; gap: 8px; }
 .feedback-panel .primary-button:disabled { opacity: .45; cursor: default; }
 

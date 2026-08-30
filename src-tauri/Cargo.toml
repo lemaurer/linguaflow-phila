@@ -1,6 +1,6 @@
 [package]
 name = "linguaflow-prototype"
-version = "0.1.2"
+version = "0.1.3"
 description = "A desktop UI prototype for LinguaFlow"
 authors = ["LinguaFlow"]
 edition = "2021"

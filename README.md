@@ -19,7 +19,7 @@ Die erwarteten Notizfelder sind `Finnish`, `Glossing`, `English` und `Audio`. Zw
 - Leertaste zeigt die Antwort.
 - `1` bis `4` bewertet die Karte wie in Anki.
 - `Esc` beendet die Sitzung.
-- Feedback wird als vorbereitete E-Mail an Leif im Standard-E-Mail-Programm geöffnet.
+- Feedback wird direkt aus der App an Leif gesendet.
 
 ## Entwicklung
 

@@ -36,18 +36,45 @@ fn stop_audio(state: tauri::State<'_, AudioState>, request: u64) {
 }
 
 #[tauri::command]
-fn open_feedback_email(url: String) -> Result<(), String> {
-    if !url.starts_with("mailto:leif.maurer@gmail.com?") {
-        return Err("Ungültige Feedback-Adresse.".to_string());
+async fn send_feedback(message: String) -> Result<(), String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Err("Bitte gib zuerst dein Feedback ein.".to_string());
     }
-    Command::new("/usr/bin/open")
-        .arg(url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("E-Mail-Programm konnte nicht geöffnet werden: {error}"))
+    if message.chars().count() > 5_000 {
+        return Err("Das Feedback ist zu lang. Bitte kürze es etwas.".to_string());
+    }
+
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| format!("Feedback konnte nicht vorbereitet werden: {error}"))?
+        .post("https://formsubmit.co/ajax/leif.maurer@gmail.com")
+        .header("Accept", "application/json")
+        .header("Origin", "https://linguaflow.app")
+        .header("Referer", "https://linguaflow.app/feedback")
+        .json(&json!({
+            "name": "Phila",
+            "message": message,
+            "_subject": "LinguaFlow Feedback von Phila",
+            "_captcha": "false"
+        }))
+        .send()
+        .await
+        .map_err(|_| "Feedback konnte gerade nicht gesendet werden. Bitte prüfe deine Internetverbindung.".to_string())?;
+
+    let status = response.status();
+    let payload: Value = response.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(format!("Der Feedback-Dienst antwortet mit Status {status}."));
+    }
+    let succeeded = payload.get("success").is_none_or(|value| {
+        value.as_bool().unwrap_or_else(|| value.as_str().is_some_and(|text| text.eq_ignore_ascii_case("true")))
+    });
+    if !succeeded {
+        return Err(payload.get("message").and_then(Value::as_str).unwrap_or("Der Feedback-Dienst hat die Nachricht nicht angenommen.").to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -129,7 +156,7 @@ async fn anki_invoke(window: tauri::WebviewWindow, action: String, params: Optio
 pub fn run() {
     tauri::Builder::default()
         .manage(AudioState::default())
-        .invoke_handler(tauri::generate_handler![anki_invoke, play_audio, stop_audio, open_feedback_email])
+        .invoke_handler(tauri::generate_handler![anki_invoke, play_audio, stop_audio, send_feedback])
         .run(tauri::generate_context!())
         .expect("error while running LinguaFlow");
 }

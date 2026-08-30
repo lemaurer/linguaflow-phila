@@ -640,16 +640,26 @@ function DeckSetupScreen({ decks, selectedDeck, onSelect, onRetry, onFeedback }:
 function FeedbackPage({ onBack }: { onBack: () => void }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
   const sendFeedback = async () => {
-    const subject = encodeURIComponent("LinguaFlow Feedback von Phila");
-    const body = encodeURIComponent(`${message.trim()}\n\n— Gesendet aus LinguaFlow`);
-    const url = `mailto:leif.maurer@gmail.com?subject=${subject}&body=${body}`;
     setError("");
+    setStatus("sending");
     try {
-      if ("__TAURI_INTERNALS__" in window) await invoke("open_feedback_email", { url });
-      else window.location.href = url;
+      if ("__TAURI_INTERNALS__" in window) {
+        await invoke("send_feedback", { message: message.trim() });
+      } else {
+        const response = await fetch("https://formsubmit.co/ajax/leif.maurer@gmail.com", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ name: "Phila", message: message.trim(), _subject: "LinguaFlow Feedback von Phila", _captcha: "false" }),
+        });
+        if (!response.ok) throw new Error(`Status ${response.status}`);
+      }
+      setMessage("");
+      setStatus("sent");
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : String(sendError));
+      setStatus("idle");
     }
   };
   return <div className="utility-page feedback-page content-page">
@@ -658,10 +668,10 @@ function FeedbackPage({ onBack }: { onBack: () => void }) {
     <section className="feedback-panel surface">
       <div className="feedback-icon"><MessageSquare size={24} /></div>
       <label htmlFor="feedback-message">Deine Nachricht</label>
-      <textarea id="feedback-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Zum Beispiel: Bei dieser Karte wurde das Audio nicht abgespielt …" autoFocus />
-      <p>Beim Absenden öffnet sich dein E-Mail-Programm mit einer vorbereiteten Nachricht an <strong>leif.maurer@gmail.com</strong>. Du kannst sie dort noch prüfen und abschicken.</p>
-      {error && <p className="feedback-error">Das E-Mail-Programm konnte nicht geöffnet werden: {error}</p>}
-      <button className="primary-button" disabled={!message.trim()} onClick={() => void sendFeedback()}><MessageSquare size={17} />E-Mail vorbereiten</button>
+      <textarea id="feedback-message" value={message} onChange={(event) => { setMessage(event.target.value); if (status === "sent") setStatus("idle"); }} placeholder="Zum Beispiel: Bei dieser Karte wurde das Audio nicht abgespielt …" autoFocus />
+      {status === "sent" && <p className="feedback-success"><Check size={16} />Danke, dein Feedback wurde gesendet.</p>}
+      {error && <p className="feedback-error">Feedback konnte nicht gesendet werden: {error}</p>}
+      <button className="primary-button" disabled={!message.trim() || status === "sending"} onClick={() => void sendFeedback()}>{status === "sending" ? <LoaderCircle className="spin" size={17} /> : <MessageSquare size={17} />}{status === "sending" ? "Wird gesendet …" : "Senden"}</button>
     </section>
   </div>;
 }
@@ -1440,6 +1450,8 @@ function deriveCardPresentation(card: AnkiCard, languageId: LanguageId, t: Trans
       kicker: "FINNISH → ENGLISH",
       prompt: [block(finnish, undefined, "main"), ...(plainText(glossing) ? [block(glossing, "Glossing")] : [])],
       answer: [block(english, "English", "main")],
+      inputTarget: plainText(english),
+      inputLabel: "Englische Antwort",
       audioFields: ["Audio"],
       answerAudioFields: ["Audio"],
       targetOnBack: false,
