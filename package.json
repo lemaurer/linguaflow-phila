@@ -7,7 +7,7 @@
     "dev": "vite --config vite.config.mjs",
     "build": "node scripts/build.mjs",
     "preview": "vite preview --config vite.config.mjs",
-    "tauri": "tauri"
+    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
