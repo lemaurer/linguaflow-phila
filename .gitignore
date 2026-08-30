@@ -1,0 +1,8 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+LinguaFlow.app/
+src/App 2.tsx
+.DS_Store
+*.log
